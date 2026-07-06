@@ -7,8 +7,12 @@
 <!-- Firebase SDK -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, doc, setDoc, addDoc, getDocs, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, addDoc, getDocs, getDoc,
+           onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy
+         } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+           signOut, onAuthStateChanged
+         } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyD-9nOVYgaUT4YZEWZO6Njf1iDVfqW0zTA",
@@ -16,85 +20,140 @@
     projectId: "zando-6e354",
     storageBucket: "zando-6e354.firebasestorage.app",
     messagingSenderId: "101924132480",
-    appId: "1:101924132480:web:d53d62436f949e9aa97865",
-    measurementId: "G-431D8TVD8J"
+    appId: "1:101924132480:web:d53d62436f949e9aa97865"
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+  const app  = initializeApp(firebaseConfig);
+  const db   = getFirestore(app);
   const auth = getAuth(app);
 
-  // Expose to global scope
-  window._fb = { db, auth, collection, doc, setDoc, addDoc, getDocs, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged };
+  // ── Expose to window so classic JS can call Firebase ──
+  window._fb = {
+    db, auth, collection, doc, setDoc, addDoc, getDocs, getDoc,
+    onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut
+  };
   window._fbReady = true;
 
-  // Helper: call a global function safely after DOM is ready
-  function safe(fn, ...args){
-    if(typeof window[fn]==='function') window[fn](...args);
-  }
+  // ── Helper: call a global function only if it exists ──
+  const safe = (fn, ...a) => { if(typeof window[fn]==='function') window[fn](...a); };
 
-  // ── AUTH STATE — restore session on page reload ──
-  onAuthStateChanged(auth, async (firebaseUser) => {
-    if(firebaseUser && !window.currentUser){
-      try {
-        const { getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-        const snap = await getDoc(doc(db,'users',firebaseUser.uid));
-        const profile = snap.exists() ? snap.data() : {prenom:firebaseUser.email.split('@')[0],nom:'',email:firebaseUser.email,tel:'',zone:''};
-        window.currentUser = {id: firebaseUser.uid, ...profile};
-        safe('updateAuthUI');
-      } catch(e){ console.log('Profile load:', e); }
-    }
-    if(!firebaseUser && window.currentUser){
-      // Signed out externally
-      window.currentUser = null;
-      safe('updateAuthUI');
-    }
-  });
+  // ── Unsubscribe handles so we can restart after login ──
+  let _unsubUsers, _unsubOrders, _unsubFood;
 
-  // ── REAL-TIME LISTENERS — wait for page to load first ──
-  window.addEventListener('load', () => {
+  function startListeners(){
+    // Stop old listeners if any
+    if(_unsubUsers)  _unsubUsers();
+    if(_unsubOrders) _unsubOrders();
+    if(_unsubFood)   _unsubFood();
 
-    // CLIENTS — users collection
-    onSnapshot(collection(db, 'users'), snap => {
-      window.users = snap.docs.map(d => ({id: d.id, ...d.data()}));
-      safe('renderAdmClients');
-      const kc = document.getElementById('k-clients');
-      if(kc) kc.textContent = window.users.length;
-    });
+    console.log('🔥 Starting Firestore listeners...');
 
-    // COMMANDES — orders collection
-    onSnapshot(query(collection(db,'orders'), orderBy('createdAt','desc')), snap => {
-      window.orders = snap.docs.map(d => ({id: d.id, ...d.data()}));
-      safe('updateAdmBadge');
-      const adm = document.getElementById('admin');
-      if(adm && adm.style.display !== 'none'){
-        safe('renderAdmDash');
-        safe('renderAdmOrders');
-      }
-      safe('updateCartCount');
-    });
+    // USERS — all clients
+    _unsubUsers = onSnapshot(
+      collection(db,'users'),
+      snap => {
+        console.log('👥 users snap:', snap.docs.length, 'docs');
+        window.users = snap.docs.map(d => ({id:d.id, ...d.data()}));
+        safe('renderAdmClients');
+        const kc = document.getElementById('k-clients');
+        if(kc) kc.textContent = window.users.length;
+      },
+      err => console.error('❌ users listener error:', err.code, err.message)
+    );
+
+    // ORDERS
+    _unsubOrders = onSnapshot(
+      query(collection(db,'orders'), orderBy('createdAt','desc')),
+      snap => {
+        window.orders = snap.docs.map(d => ({id:d.id, ...d.data()}));
+        safe('updateAdmBadge');
+        const adm = document.getElementById('admin');
+        if(adm && adm.style.display !== 'none'){
+          safe('renderAdmDash'); safe('renderAdmOrders');
+        }
+        safe('updateCartCount');
+      },
+      err => console.error('❌ orders listener error:', err.code)
+    );
 
     // FOOD ORDERS
-    onSnapshot(query(collection(db,'foodOrders'), orderBy('createdAt','desc')), snap => {
-      window.foodOrders = snap.docs.map(d => ({id: d.id, ...d.data()}));
-      safe('renderAdmFood');
-    });
+    _unsubFood = onSnapshot(
+      query(collection(db,'foodOrders'), orderBy('createdAt','desc')),
+      snap => {
+        window.foodOrders = snap.docs.map(d => ({id:d.id, ...d.data()}));
+        safe('renderAdmFood');
+      },
+      err => console.error('❌ foodOrders listener error:', err.code)
+    );
 
-    // STORES
-    onSnapshot(collection(db,'stores'), snap => {
-      if(snap.docs.length > 0){
-        window.stores = snap.docs.map(d => ({id: d.id, ...d.data()}));
-        if(window.siteMap){ safe('renderMapList', window.stores); safe('addMapMarkers', window.stores); }
+    // STORES (public — no auth needed)
+    onSnapshot(
+      collection(db,'stores'),
+      snap => {
+        if(snap.docs.length > 0){
+          window.stores = snap.docs.map(d => ({id:d.id, ...d.data()}));
+          if(window.siteMap){ safe('renderMapList', window.stores); safe('addMapMarkers', window.stores); }
+        }
+      },
+      err => console.error('❌ stores listener error:', err.code)
+    );
+  }
+
+  // ── Auth state — start listeners only when user is authenticated ──
+  onAuthStateChanged(auth, async firebaseUser => {
+    console.log('🔑 Auth state:', firebaseUser ? firebaseUser.email : 'signed out');
+
+    if(firebaseUser){
+      // Start/restart listeners now that we have auth
+      startListeners();
+
+      // Restore session if page was refreshed
+      if(!window.currentUser){
+        try {
+          const snap = await getDoc(doc(db,'users', firebaseUser.uid));
+          const profile = snap.exists()
+            ? snap.data()
+            : {prenom: firebaseUser.email.split('@')[0], nom:'', email: firebaseUser.email, tel:'', zone:''};
+          window.currentUser = {id: firebaseUser.uid, ...profile};
+          safe('updateAuthUI');
+          console.log('✅ Session restored:', window.currentUser.prenom);
+        } catch(e){
+          console.error('Profile load error:', e);
+        }
       }
-    });
 
-    // Status indicator
-    const dot = document.getElementById('fb-dot');
-    const lbl = document.getElementById('fb-label');
-    if(dot){ dot.style.background='#22c55e'; }
-    if(lbl){ lbl.textContent='Firebase connecté'; lbl.style.color='#16a34a'; }
-    console.log('✅ Firebase Zando — listeners actifs');
+      // Update Firebase status indicator
+      const dot = document.getElementById('fb-dot');
+      const lbl = document.getElementById('fb-label');
+      if(dot) dot.style.background = '#22c55e';
+      if(lbl){ lbl.textContent = 'Firebase connecté'; lbl.style.color = '#16a34a'; }
+
+    } else {
+      // Not logged in — stop protected listeners, keep stores
+      if(_unsubUsers)  { _unsubUsers();  _unsubUsers  = null; }
+      if(_unsubOrders) { _unsubOrders(); _unsubOrders = null; }
+      if(_unsubFood)   { _unsubFood();   _unsubFood   = null; }
+
+      if(window.currentUser){
+        window.currentUser = null;
+        safe('updateAuthUI');
+      }
+    }
   });
+
+  // STORES listener starts immediately (public data, no auth needed)
+  onSnapshot(
+    collection(db,'stores'),
+    snap => {
+      if(snap.docs.length > 0){
+        window.stores = snap.docs.map(d => ({id:d.id, ...d.data()}));
+      }
+    },
+    err => console.error('stores public:', err.code)
+  );
+
+  console.log('✅ Firebase Zando initialisé');
 </script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -1557,26 +1616,34 @@ function openAdmin(){
   renderAdmDash();renderAdmProds();renderAdmOrders();renderAdmClients();renderAdmStores();renderAdmFood();updateAdmBadge();
   // Force fresh read from Firestore when admin opens
   if(window._fbReady && window._fb){
-    const {db, collection, getDocs, query, orderBy} = window._fb;
-    // Load clients
+    const {db, collection, getDocs} = window._fb;
+    console.log('📋 openAdmin: fetching all data from Firestore...');
+
+    // USERS — direct read, bypasses listener timing issues
     getDocs(collection(db,'users'))
       .then(snap=>{
+        console.log('👥 openAdmin got', snap.docs.length, 'users');
         window.users = snap.docs.map(d=>({id:d.id,...d.data()}));
         renderAdmClients();
         const kc=document.getElementById('k-clients');if(kc)kc.textContent=window.users.length;
-      }).catch(e=>console.log('users:', e));
-    // Load orders
+      })
+      .catch(e=>console.error('❌ users getDocs failed:', e.code, e.message));
+
+    // ORDERS
     getDocs(collection(db,'orders'))
       .then(snap=>{
         window.orders = snap.docs.map(d=>({id:d.id,...d.data()}));
         renderAdmDash();renderAdmOrders();updateAdmBadge();
-      }).catch(e=>console.log('orders:', e));
-    // Load food orders
+      })
+      .catch(e=>console.error('❌ orders getDocs failed:', e.code));
+
+    // FOOD ORDERS
     getDocs(collection(db,'foodOrders'))
       .then(snap=>{
         window.foodOrders = snap.docs.map(d=>({id:d.id,...d.data()}));
         renderAdmFood();
-      }).catch(e=>console.log('foodOrders:', e));
+      })
+      .catch(e=>console.error('❌ foodOrders getDocs failed:', e.code));
   }
   toast('Admin ouvert');
 }
