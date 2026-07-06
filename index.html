@@ -1344,7 +1344,37 @@ function doLogin(){
     currentUser=u;updateAuthUI();showPage('home');toast('Bienvenue, '+u.prenom+' !');
   }
 }
-function doAdminLogin(){const e=document.getElementById('l-email').value.trim();const p=document.getElementById('l-pass').value;if(e===ADMIN_EMAIL&&p===ADMIN_PASS){openAdmin();return;}doLogin();}
+function doAdminLogin(){
+  const e=document.getElementById('l-email').value.trim().toLowerCase();
+  const p=document.getElementById('l-pass').value;
+  if(!e||!p){toast('Remplis email et mot de passe','var(--rd)');return;}
+  if(e!==ADMIN_EMAIL){toast('Accès refusé','var(--rd)');return;}
+  if(!window._fbReady){
+    // Fallback offline
+    if(e===ADMIN_EMAIL&&p===ADMIN_PASS){currentUser={id:'admin',prenom:'Admin',nom:'Zando',email:e};updateAuthUI();openAdmin();}
+    else toast('Mot de passe incorrect','var(--rd)');
+    return;
+  }
+  toast('Connexion admin...','var(--bl)');
+  const {auth, signInWithEmailAndPassword} = window._fb;
+  signInWithEmailAndPassword(auth, e, p)
+    .then(cred => {
+      // onAuthStateChanged will fire and start listeners automatically
+      // Wait a moment for listeners to start, then open admin
+      currentUser = {id:cred.user.uid, prenom:'Admin', nom:'Zando', email:e};
+      updateAuthUI();
+      setTimeout(()=>{ openAdmin(); }, 800);
+    })
+    .catch(err => {
+      const msgs = {
+        'auth/wrong-password':'Mot de passe incorrect',
+        'auth/invalid-credential':'Identifiants incorrects',
+        'auth/user-not-found':'Compte introuvable',
+        'auth/too-many-requests':'Trop de tentatives, réessayez plus tard'
+      };
+      toast(msgs[err.code]||'Erreur: '+err.message,'var(--rd)');
+    });
+}
 function passStrength(v){const b=document.getElementById('pbar');const h=document.getElementById('phint');if(!b||!h)return;let s=0;if(v.length>=8)s++;if(v.length>=12)s++;if(/[0-9]/.test(v))s++;if(/[A-Z]/.test(v))s++;if(/[^a-zA-Z0-9]/.test(v))s++;const c=['#ef4444','#f97316','#eab308','#22c55e','#00c47a'];const l=['Très faible','Faible','Moyen','Fort','Très fort'];b.style.width=(s*20)+'%';b.style.background=c[Math.max(0,s-1)];h.textContent=v.length?l[Math.max(0,s-1)]:'';h.style.color=c[Math.max(0,s-1)];}
 function doRegister(){
   const prenom=document.getElementById('r-prenom').value.trim();
@@ -1614,38 +1644,43 @@ function openAdmin(){
   document.getElementById('food-site').style.display='none';
   document.getElementById('admin').style.display='block';
   renderAdmDash();renderAdmProds();renderAdmOrders();renderAdmClients();renderAdmStores();renderAdmFood();updateAdmBadge();
-  // Force fresh read from Firestore when admin opens
-  if(window._fbReady && window._fb){
-    const {db, collection, getDocs} = window._fb;
-    console.log('📋 openAdmin: fetching all data from Firestore...');
-
-    // USERS — direct read, bypasses listener timing issues
-    getDocs(collection(db,'users'))
-      .then(snap=>{
-        console.log('👥 openAdmin got', snap.docs.length, 'users');
-        window.users = snap.docs.map(d=>({id:d.id,...d.data()}));
-        renderAdmClients();
-        const kc=document.getElementById('k-clients');if(kc)kc.textContent=window.users.length;
-      })
-      .catch(e=>console.error('❌ users getDocs failed:', e.code, e.message));
-
-    // ORDERS
-    getDocs(collection(db,'orders'))
-      .then(snap=>{
-        window.orders = snap.docs.map(d=>({id:d.id,...d.data()}));
-        renderAdmDash();renderAdmOrders();updateAdmBadge();
-      })
-      .catch(e=>console.error('❌ orders getDocs failed:', e.code));
-
-    // FOOD ORDERS
-    getDocs(collection(db,'foodOrders'))
-      .then(snap=>{
-        window.foodOrders = snap.docs.map(d=>({id:d.id,...d.data()}));
-        renderAdmFood();
-      })
-      .catch(e=>console.error('❌ foodOrders getDocs failed:', e.code));
-  }
   toast('Admin ouvert');
+  _loadAdminData();
+}
+
+function _loadAdminData(){
+  if(!window._fbReady || !window._fb){ setTimeout(_loadAdminData, 500); return; }
+  const {db, collection, getDocs, auth} = window._fb;
+  // Check if Firebase Auth is ready
+  if(!auth.currentUser){ setTimeout(_loadAdminData, 500); return; }
+
+  console.log('📋 Loading admin data, auth:', auth.currentUser.email);
+
+  getDocs(collection(db,'users'))
+    .then(snap=>{
+      console.log('👥 Got', snap.docs.length, 'users from Firestore');
+      window.users = snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderAdmClients();
+      const kc=document.getElementById('k-clients');if(kc)kc.textContent=window.users.length;
+    })
+    .catch(e=>{
+      console.error('❌ users failed:', e.code, e.message);
+      toast('Erreur lecture clients: '+e.code,'var(--rd)');
+    });
+
+  getDocs(collection(db,'orders'))
+    .then(snap=>{
+      window.orders = snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderAdmDash();renderAdmOrders();updateAdmBadge();
+    })
+    .catch(e=>console.error('❌ orders:', e.code));
+
+  getDocs(collection(db,'foodOrders'))
+    .then(snap=>{
+      window.foodOrders = snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderAdmFood();
+    })
+    .catch(e=>console.error('❌ foodOrders:', e.code));
 }
 function exitAdmin(){document.getElementById('admin').style.display='none';switchSite('shop');}
 function showAdmPage(id,el){
