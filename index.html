@@ -795,7 +795,13 @@ tr:hover td{background:#fafbfc}
           <div class="acard"><div class="acard-h"><div class="acard-t">Toutes les commandes</div></div><div class="tscroll"><table><thead><tr><th>Réf</th><th>Client</th><th>Zone</th><th>Total</th><th>Paiement</th><th>Date</th><th>Statut</th><th>Action</th></tr></thead><tbody id="a-orders-tb"></tbody></table></div></div>
         </div>
         <div class="apage" id="a-clients">
-          <div class="acard"><div class="acard-h"><div class="acard-t">Clients inscrits</div></div><div class="tscroll"><table><thead><tr><th>Client</th><th>Email</th><th>Téléphone</th><th>Commune</th><th>Commandes</th><th>Date</th></tr></thead><tbody id="a-clients-tb"></tbody></table></div></div>
+          <div class="acard">
+            <div class="acard-h">
+              <div class="acard-t">Clients inscrits</div>
+              <span id="clients-count" style="font-size:12px;color:var(--txm);font-weight:500"></span>
+            </div>
+            <div id="a-clients-grid" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px"></div>
+          </div>
         </div>
         <div class="apage" id="a-stores">
           <div class="acard"><div class="acard-h"><div class="acard-t">Stores sur la carte</div><button class="btn btn-g btn-sm" onclick="openStoreModal()">+ Ajouter</button></div><div class="tscroll"><table><thead><tr><th>Nom</th><th>Type</th><th>Commune</th><th>Adresse</th><th>Statut</th><th>Actions</th></tr></thead><tbody id="a-stores-tb"></tbody></table></div></div>
@@ -1560,7 +1566,44 @@ function renderAdmOrders(){
   }).join('')||`<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--txm)">Aucune commande</td></tr>`;
 }
 function renderAdmClients(){
-  document.getElementById('a-clients-tb').innerHTML=users.map(u=>`<tr><td style="font-weight:600">${u.prenom} ${u.nom}</td><td>${u.email}</td><td>${u.tel}</td><td>${u.zone}</td><td>${orders.filter(o=>o.clientId===u.id).length}</td><td style="color:var(--txm)">${u.date}</td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--txm)">Aucun client</td></tr>`;
+  const grid=document.getElementById('a-clients-grid');
+  const cnt=document.getElementById('clients-count');
+  if(!grid)return;
+  if(cnt)cnt.textContent=users.length+' client'+(users.length>1?'s':'');
+  if(!users.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--txm)"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="width:40px;height:40px;margin:0 auto 10px;display:block;opacity:.2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>Aucun client inscrit</p></div>';
+    return;
+  }
+  grid.innerHTML=users.map(u=>{
+    const nbOrders=orders.filter(o=>o.clientId===u.id).length;
+    const initials=(u.prenom?u.prenom[0]:'')+(u.nom?u.nom[0]:'');
+    return `<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:16px;transition:box-shadow .15s" onmouseover="this.style.boxShadow='var(--shm)'" onmouseout="this.style.boxShadow='none'">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <div style="width:42px;height:42px;border-radius:50%;background:var(--gl);color:var(--gd);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;flex-shrink:0">${initials.toUpperCase()}</div>
+        <div style="min-width:0">
+          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.prenom||''} ${u.nom||''}</div>
+          <div style="font-size:11px;color:var(--txm);margin-top:1px">${u.zone||'—'}</div>
+        </div>
+        <div style="margin-left:auto;flex-shrink:0">
+          <span style="background:${nbOrders>0?'var(--gl)':'var(--sf)'};color:${nbOrders>0?'var(--gd)':'var(--txm)'};border:1px solid ${nbOrders>0?'var(--g)':'var(--bd)'};border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">${nbOrders} commande${nbOrders>1?'s':''}</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px;color:var(--txm);flex-shrink:0"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <span style="color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email||'—'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px;color:var(--txm);flex-shrink:0"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+          <span style="color:var(--tx)">${u.tel||'—'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px;color:var(--txm);flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span style="color:var(--txm)">Inscrit le ${u.date||'—'}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 function renderAdmStores(){
   document.getElementById('a-stores-tb').innerHTML=stores.map(s=>`<tr>
