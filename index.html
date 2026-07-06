@@ -54,7 +54,7 @@
       collection(db,'users'),
       snap => {
         console.log('👥 users snap:', snap.docs.length, 'docs');
-        window.users = snap.docs.map(d => ({id:d.id, ...d.data()}));
+        users = snap.docs.map(d => ({id:d.id, ...d.data()}));
         safe('renderAdmClients');
         const kc = document.getElementById('k-clients');
         if(kc) kc.textContent = window.users.length;
@@ -66,7 +66,7 @@
     _unsubOrders = onSnapshot(
       query(collection(db,'orders'), orderBy('createdAt','desc')),
       snap => {
-        window.orders = snap.docs.map(d => ({id:d.id, ...d.data()}));
+        orders = snap.docs.map(d => ({id:d.id, ...d.data()}));
         safe('updateAdmBadge');
         const adm = document.getElementById('admin');
         if(adm && adm.style.display !== 'none'){
@@ -81,7 +81,7 @@
     _unsubFood = onSnapshot(
       query(collection(db,'foodOrders'), orderBy('createdAt','desc')),
       snap => {
-        window.foodOrders = snap.docs.map(d => ({id:d.id, ...d.data()}));
+        foodOrders = snap.docs.map(d => ({id:d.id, ...d.data()}));
         safe('renderAdmFood');
       },
       err => console.error('❌ foodOrders listener error:', err.code)
@@ -92,8 +92,8 @@
       collection(db,'stores'),
       snap => {
         if(snap.docs.length > 0){
-          window.stores = snap.docs.map(d => ({id:d.id, ...d.data()}));
-          if(window.siteMap){ safe('renderMapList', window.stores); safe('addMapMarkers', window.stores); }
+          stores = snap.docs.map(d => ({id:d.id, ...d.data()}));
+          if(siteMap){ safe('renderMapList', window.stores); safe('addMapMarkers', window.stores); }
         }
       },
       err => console.error('❌ stores listener error:', err.code)
@@ -102,43 +102,35 @@
 
   // ── Auth state — start listeners only when user is authenticated ──
   onAuthStateChanged(auth, async firebaseUser => {
-    console.log('🔑 Auth state:', firebaseUser ? firebaseUser.email : 'signed out');
-
     if(firebaseUser){
-      // Start/restart listeners now that we have auth
+      // Start listeners (needs auth)
       startListeners();
 
-      // Restore session if page was refreshed
-      if(!window.currentUser){
+      // Restore session for regular clients only (not admin)
+      // Admin must always login manually via "Accès Administrateur"
+      const ADMIN = 'mitifelice@gmail.com';
+      if(!currentUser && firebaseUser.email !== ADMIN){
         try {
           const snap = await getDoc(doc(db,'users', firebaseUser.uid));
-          const profile = snap.exists()
-            ? snap.data()
-            : {prenom: firebaseUser.email.split('@')[0], nom:'', email: firebaseUser.email, tel:'', zone:''};
-          window.currentUser = {id: firebaseUser.uid, ...profile};
-          safe('updateAuthUI');
-          console.log('✅ Session restored:', window.currentUser.prenom);
-        } catch(e){
-          console.error('Profile load error:', e);
-        }
+          if(snap.exists()){
+            currentUser = {id: firebaseUser.uid, ...snap.data()};
+            safe('updateAuthUI');
+          }
+        } catch(e){ console.log('Session restore:', e.code); }
       }
 
-      // Update Firebase status indicator
+      // Firebase status indicator
       const dot = document.getElementById('fb-dot');
       const lbl = document.getElementById('fb-label');
       if(dot) dot.style.background = '#22c55e';
       if(lbl){ lbl.textContent = 'Firebase connecté'; lbl.style.color = '#16a34a'; }
 
     } else {
-      // Not logged in — stop protected listeners, keep stores
+      // Signed out — stop listeners
       if(_unsubUsers)  { _unsubUsers();  _unsubUsers  = null; }
       if(_unsubOrders) { _unsubOrders(); _unsubOrders = null; }
       if(_unsubFood)   { _unsubFood();   _unsubFood   = null; }
-
-      if(window.currentUser){
-        window.currentUser = null;
-        safe('updateAuthUI');
-      }
+      if(currentUser){ currentUser = null; safe('updateAuthUI'); }
     }
   });
 
@@ -147,7 +139,7 @@
     collection(db,'stores'),
     snap => {
       if(snap.docs.length > 0){
-        window.stores = snap.docs.map(d => ({id:d.id, ...d.data()}));
+        stores = snap.docs.map(d => ({id:d.id, ...d.data()}));
       }
     },
     err => console.error('stores public:', err.code)
@@ -821,7 +813,7 @@ tr:hover td{background:#fafbfc}
 </div><!-- /food-site -->
 
 <!-- ═══════════ ADMIN ═══════════ -->
-<div id="admin">
+<div id="admin" style="display:none">
   <div class="adm-lay">
     <nav class="adm-side">
       <div class="adm-logo">
@@ -1349,30 +1341,24 @@ function doAdminLogin(){
   const p=document.getElementById('l-pass').value;
   if(!e||!p){toast('Remplis email et mot de passe','var(--rd)');return;}
   if(e!==ADMIN_EMAIL){toast('Accès refusé','var(--rd)');return;}
-  if(!window._fbReady){
-    // Fallback offline
-    if(e===ADMIN_EMAIL&&p===ADMIN_PASS){currentUser={id:'admin',prenom:'Admin',nom:'Zando',email:e};updateAuthUI();openAdmin();}
-    else toast('Mot de passe incorrect','var(--rd)');
-    return;
-  }
+  if(p!==ADMIN_PASS){toast('Mot de passe incorrect','var(--rd)');return;}
+  if(!window._fbReady){currentUser={id:'admin',prenom:'Admin',nom:'Zando',email:e};updateAuthUI();openAdmin();return;}
   toast('Connexion admin...','var(--bl)');
-  const {auth, signInWithEmailAndPassword} = window._fb;
-  signInWithEmailAndPassword(auth, e, p)
-    .then(cred => {
-      // onAuthStateChanged will fire and start listeners automatically
-      // Wait a moment for listeners to start, then open admin
-      currentUser = {id:cred.user.uid, prenom:'Admin', nom:'Zando', email:e};
-      updateAuthUI();
-      setTimeout(()=>{ openAdmin(); }, 800);
+  const {auth,signInWithEmailAndPassword,createUserWithEmailAndPassword}=window._fb;
+  signInWithEmailAndPassword(auth,e,p)
+    .then(cred=>{
+      currentUser={id:cred.user.uid,prenom:'Admin',nom:'Zando',email:e};
+      updateAuthUI();setTimeout(()=>{openAdmin();},1000);
     })
-    .catch(err => {
-      const msgs = {
-        'auth/wrong-password':'Mot de passe incorrect',
-        'auth/invalid-credential':'Identifiants incorrects',
-        'auth/user-not-found':'Compte introuvable',
-        'auth/too-many-requests':'Trop de tentatives, réessayez plus tard'
-      };
-      toast(msgs[err.code]||'Erreur: '+err.message,'var(--rd)');
+    .catch(err=>{
+      if(['auth/user-not-found','auth/invalid-credential','auth/wrong-password'].includes(err.code)){
+        toast('Création compte admin Firebase...','var(--bl)');
+        createUserWithEmailAndPassword(auth,e,p)
+          .then(cred=>{currentUser={id:cred.user.uid,prenom:'Admin',nom:'Zando',email:e};updateAuthUI();setTimeout(()=>{openAdmin();},1000);})
+          .catch(e2=>toast('Erreur: '+e2.code+' — Va sur Firebase Console → Authentication → réinitialise le mot de passe','var(--rd)'));
+      } else if(err.code==='auth/too-many-requests'){
+        toast('Trop de tentatives — attendez quelques minutes','var(--rd)');
+      } else {toast('Erreur: '+err.code,'var(--rd)');}
     });
 }
 function passStrength(v){const b=document.getElementById('pbar');const h=document.getElementById('phint');if(!b||!h)return;let s=0;if(v.length>=8)s++;if(v.length>=12)s++;if(/[0-9]/.test(v))s++;if(/[A-Z]/.test(v))s++;if(/[^a-zA-Z0-9]/.test(v))s++;const c=['#ef4444','#f97316','#eab308','#22c55e','#00c47a'];const l=['Très faible','Faible','Moyen','Fort','Très fort'];b.style.width=(s*20)+'%';b.style.background=c[Math.max(0,s-1)];h.textContent=v.length?l[Math.max(0,s-1)]:'';h.style.color=c[Math.max(0,s-1)];}
@@ -1417,10 +1403,19 @@ function doRegister(){
   }
 }
 function logout(){
-  if(window._fbReady){
+  // Hide admin panel immediately
+  const adm = document.getElementById('admin');
+  if(adm) adm.style.display='none';
+  switchSite('shop');
+  if(window._fbReady && window._fb){
     window._fb.signOut(window._fb.auth).catch(e=>console.log(e));
   }
-  currentUser=null;updateAuthUI();showPage('home');toast('Déconnecté');
+  currentUser=null;
+  // Reset data
+  orders=[];users=[];foodOrders=[];
+  updateAuthUI();
+  showPage('home');
+  toast('Déconnecté');
 }
 function updateAuthUI(){
   const a=document.getElementById('nav-login');
@@ -1726,41 +1721,103 @@ function renderAdmClients(){
   const grid=document.getElementById('a-clients-grid');
   const cnt=document.getElementById('clients-count');
   if(!grid)return;
-  if(cnt)cnt.textContent=users.length+' client'+(users.length>1?'s':'');
-  if(!users.length){
+  // Filter out admin from client list
+  const clients = users.filter(u => u.email !== ADMIN_EMAIL);
+  if(cnt)cnt.textContent=clients.length+' client'+(clients.length>1?'s':'');
+  if(!clients.length){
     grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--txm)"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="width:40px;height:40px;margin:0 auto 10px;display:block;opacity:.2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>Aucun client inscrit</p></div>';
     return;
   }
-  grid.innerHTML=users.map(u=>{
+  grid.innerHTML=clients.map(u=>{
     const nbOrders=orders.filter(o=>o.clientId===u.id).length;
     const initials=(u.prenom?u.prenom[0]:'')+(u.nom?u.nom[0]:'');
-    return `<div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:16px;transition:box-shadow .15s" onmouseover="this.style.boxShadow='var(--shm)'" onmouseout="this.style.boxShadow='none'">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-        <div style="width:42px;height:42px;border-radius:50%;background:var(--gl);color:var(--gd);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;flex-shrink:0">${initials.toUpperCase()}</div>
-        <div style="min-width:0">
-          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.prenom||''} ${u.nom||''}</div>
-          <div style="font-size:11px;color:var(--txm);margin-top:1px">${u.zone||'—'}</div>
+    const isActive = u.statut !== 'inactif';
+    return `<div style="background:var(--sf);border:1px solid ${isActive?'var(--bd)':'var(--rd)'};border-radius:var(--r);padding:16px;transition:box-shadow .15s;opacity:${isActive?1:0.6}" onmouseover="this.style.boxShadow='var(--shm)'" onmouseout="this.style.boxShadow='none'">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <div style="width:42px;height:42px;border-radius:50%;background:${isActive?'var(--gl)':'var(--rdl)'};color:${isActive?'var(--gd)':'var(--rd)'};display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;flex-shrink:0">${initials.toUpperCase()||'?'}</div>
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.prenom||''} ${u.nom||''}</div>
+          <div style="font-size:11px;color:var(--txm)">${u.zone||'—'}</div>
         </div>
-        <div style="margin-left:auto;flex-shrink:0">
-          <span style="background:${nbOrders>0?'var(--gl)':'var(--sf)'};color:${nbOrders>0?'var(--gd)':'var(--txm)'};border:1px solid ${nbOrders>0?'var(--g)':'var(--bd)'};border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">${nbOrders} commande${nbOrders>1?'s':''}</span>
+        <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;background:${isActive?'var(--gl)':'var(--rdl)'};color:${isActive?'var(--gd)':'var(--rd)'};flex-shrink:0">${isActive?'Actif':'Inactif'}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:7px;font-size:11px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:12px;height:12px;color:var(--txm);flex-shrink:0"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email||'—'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:11px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:12px;height:12px;color:var(--txm);flex-shrink:0"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+          <span>${u.tel||'—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--txm)">
+          <span>Inscrit le ${u.date||'—'}</span>
+          <span style="font-weight:700;color:${nbOrders>0?'var(--g)':'var(--txm)'}">${nbOrders} cmd</span>
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px;color:var(--txm);flex-shrink:0"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          <span style="color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email||'—'}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px;color:var(--txm);flex-shrink:0"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
-          <span style="color:var(--tx)">${u.tel||'—'}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px">
-          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px;color:var(--txm);flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          <span style="color:var(--txm)">Inscrit le ${u.date||'—'}</span>
-        </div>
+      <div style="display:flex;gap:6px;border-top:1px solid var(--bd);padding-top:10px">
+        <button onclick="toggleClientStatus('${u.id}','${u.statut||'actif'}')" style="flex:1;padding:6px;border-radius:var(--rs);border:1px solid var(--bd);background:${isActive?'var(--rdl)':'var(--gl)'};color:${isActive?'var(--rd)':'var(--gd)'};font-size:11px;font-weight:600;cursor:pointer">
+          ${isActive?'Désactiver':'Réactiver'}
+        </button>
+        <button onclick="editClient('${u.id}')" style="flex:1;padding:6px;border-radius:var(--rs);border:1px solid var(--bd);background:var(--bll);color:var(--bl);font-size:11px;font-weight:600;cursor:pointer">
+          Modifier
+        </button>
+        <button onclick="delClient('${u.id}')" style="padding:6px 10px;border-radius:var(--rs);border:1px solid var(--bd);background:var(--rdl);color:var(--rd);font-size:11px;font-weight:600;cursor:pointer">
+          ✕
+        </button>
       </div>
     </div>`;
   }).join('');
+}
+
+function toggleClientStatus(uid, currentStatus){
+  const newStatus = currentStatus === 'inactif' ? 'actif' : 'inactif';
+  const u = users.find(x=>x.id===uid);
+  if(!u) return;
+  u.statut = newStatus;
+  if(window._fbReady && window._fb){
+    const {db, doc, updateDoc} = window._fb;
+    updateDoc(doc(db,'users',uid), {statut: newStatus})
+      .then(()=>toast(newStatus==='actif'?'Client réactivé':'Client désactivé'))
+      .catch(e=>toast('Erreur: '+e.code,'var(--rd)'));
+  }
+  renderAdmClients();
+}
+
+function editClient(uid){
+  const u = users.find(x=>x.id===uid);
+  if(!u) return;
+  const prenom = prompt('Prénom:', u.prenom||'');
+  if(prenom===null) return;
+  const nom = prompt('Nom:', u.nom||'');
+  if(nom===null) return;
+  const tel = prompt('Téléphone:', u.tel||'');
+  if(tel===null) return;
+  const zone = prompt('Commune:', u.zone||'');
+  if(zone===null) return;
+  u.prenom=prenom; u.nom=nom; u.tel=tel; u.zone=zone;
+  if(window._fbReady && window._fb){
+    const {db, doc, updateDoc} = window._fb;
+    updateDoc(doc(db,'users',uid), {prenom,nom,tel,zone})
+      .then(()=>toast('Client modifié ✅'))
+      .catch(e=>toast('Erreur: '+e.code,'var(--rd)'));
+  }
+  renderAdmClients();
+}
+
+function delClient(uid){
+  const u = users.find(x=>x.id===uid);
+  if(!u) return;
+  if(!confirm('Supprimer le client '+u.prenom+' '+u.nom+' définitivement ?')) return;
+  users = users.filter(x=>x.id!==uid);
+  if(window._fbReady && window._fb){
+    const {db, doc, deleteDoc} = window._fb;
+    deleteDoc(doc(db,'users',uid))
+      .then(()=>toast('Client supprimé'))
+      .catch(e=>toast('Erreur: '+e.code,'var(--rd)'));
+  }
+  renderAdmClients();
+  renderAdmDash();
 }
 function renderAdmStores(){
   document.getElementById('a-stores-tb').innerHTML=stores.map(s=>`<tr>
