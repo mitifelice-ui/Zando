@@ -855,7 +855,7 @@ tr:hover td{background:#fafbfc}
           <div class="acard"><div class="acard-h"><div class="acard-t">Catalogue</div><button class="btn btn-g btn-sm" onclick="openProdModal()">+ Ajouter</button></div><div class="tscroll"><table><thead><tr><th>Photo</th><th>Produit</th><th>Cat.</th><th>Prix</th><th>Stock</th><th>Statut</th><th>Actions</th></tr></thead><tbody id="a-prods-tb"></tbody></table></div></div>
         </div>
         <div class="apage" id="a-orders">
-          <div class="acard"><div class="acard-h"><div class="acard-t">Toutes les commandes</div></div><div class="tscroll"><table><thead><tr><th>Réf</th><th>Client</th><th>Zone</th><th>Total</th><th>Paiement</th><th>Date</th><th>Statut</th><th>Action</th></tr></thead><tbody id="a-orders-tb"></tbody></table></div></div>
+          <div id="a-orders-content"></div>
         </div>
         <div class="apage" id="a-clients">
           <div class="acard">
@@ -1712,10 +1712,94 @@ function renderAdmProds(){
   </tr>`).join('');
 }
 function renderAdmOrders(){
-  document.getElementById('a-orders-tb').innerHTML=orders.map(o=>{
-    const sl=SL[o.status]||{l:o.status,c:'bdg-gray'};
-    return`<tr><td style="font-weight:700;font-size:11px">${o.ref}</td><td>${o.clientName}</td><td>${o.zone}</td><td style="font-weight:600">${fmt(o.total)}</td><td>${PL[o.payment]||o.payment}</td><td>${o.date}</td><td><span class="badge ${sl.c}">${sl.l}</span></td><td><select style="font-size:10px;padding:2px 5px;border:1px solid var(--bd);border-radius:4px" onchange="chgStatus('${o.ref}',this.value)"><option value="en_attente">En attente</option><option value="en_cours">En cours</option><option value="livrée">Livrée</option><option value="annulée">Annulée</option></select></td></tr>`;
-  }).join('')||`<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--txm)">Aucune commande</td></tr>`;
+  const el = document.getElementById('a-orders-content');
+  if(!el) return;
+
+  if(!orders.length){
+    el.innerHTML = `<div class="acard"><div style="text-align:center;padding:40px;color:var(--txm)">
+      <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="width:40px;height:40px;margin:0 auto 12px;display:block;opacity:.2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      <p>Aucune commande reçue</p></div></div>`;
+    return;
+  }
+
+  // Group orders by client
+  const byClient = {};
+  orders.forEach(o => {
+    const key = o.clientId || o.clientName || 'Inconnu';
+    if(!byClient[key]) byClient[key] = {name: o.clientName || 'Client inconnu', orders: []};
+    byClient[key].orders.push(o);
+  });
+
+  let html = '';
+  Object.values(byClient).forEach(client => {
+    const clientTotal = client.orders.reduce((s,o)=>s+(o.total||0), 0);
+    const clientOrders = client.orders.length;
+    const initials = client.name.split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2);
+
+    html += `<div class="acard" style="margin-bottom:16px">
+      <!-- Client header -->
+      <div class="acard-h" style="background:var(--sf)">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--gl);color:var(--gd);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;flex-shrink:0">${initials}</div>
+          <div>
+            <div style="font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:700">${client.name}</div>
+            <div style="font-size:11px;color:var(--txm)">${clientOrders} commande${clientOrders>1?'s':''} · Total : ${fmt(clientTotal)}</div>
+          </div>
+        </div>
+      </div>`;
+
+    // Each order for this client
+    client.orders.forEach(o => {
+      const sl = SL[o.status]||{l:o.status,c:'bdg-gray'};
+      const items = Array.isArray(o.items) ? o.items : [];
+
+      html += `<div style="padding:14px 16px;border-bottom:1px solid var(--bd)">
+        <!-- Order header row -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+          <span style="font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:700;background:var(--sf);border:1px solid var(--bd);border-radius:var(--rs);padding:3px 10px">${o.ref||'—'}</span>
+          <span class="badge ${sl.c}">${sl.l}</span>
+          <span style="font-size:11px;color:var(--txm)">${o.date||'—'}</span>
+          <span style="font-size:11px;color:var(--txm)">${o.zone||'—'}</span>
+          <span style="font-size:11px;color:var(--txm)">${PL[o.payment]||o.payment||'—'}</span>
+          <select style="font-size:11px;padding:3px 7px;border:1px solid var(--bd);border-radius:var(--rs);margin-left:auto;cursor:pointer" onchange="chgStatus('${o.ref}',this.value)">
+            <option value="en_attente" ${o.status==='en_attente'?'selected':''}>En attente</option>
+            <option value="en_cours" ${o.status==='en_cours'?'selected':''}>En cours</option>
+            <option value="livrée" ${o.status==='livrée'?'selected':''}>Livrée</option>
+            <option value="annulée" ${o.status==='annulée'?'selected':''}>Annulée</option>
+          </select>
+        </div>
+        <!-- Articles détail -->
+        <div style="background:var(--sf);border-radius:var(--rs);padding:10px 12px">
+          <div style="font-size:10px;font-weight:700;color:var(--txm);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Articles commandés</div>
+          ${items.length ? items.map(it=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="background:var(--g);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${it.qty}</span>
+                <span style="font-weight:500">${it.name||'—'}</span>
+              </div>
+              <span style="font-weight:600;color:var(--g)">${fmt((it.price||0)*it.qty)}</span>
+            </div>`).join('') : '<div style="font-size:11px;color:var(--txm);text-align:center;padding:6px">Détail non disponible</div>'}
+          <div style="display:flex;justify-content:space-between;padding-top:8px;font-size:12px">
+            <span style="color:var(--txm)">Livraison</span><span>2 500 CDF</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--bd);font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700">
+            <span>Total</span><span style="color:var(--g)">${fmt(o.total||0)}</span>
+          </div>
+        </div>
+        <!-- Adresse livraison -->
+        ${o.addr ? `<div style="margin-top:8px;font-size:11px;color:var(--txm);display:flex;align-items:center;gap:5px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:11px;height:11px;flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          ${o.addr} · ${o.zone||''}</div>` : ''}
+        ${o.tel ? `<div style="font-size:11px;color:var(--txm);display:flex;align-items:center;gap:5px;margin-top:3px">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:11px;height:11px;flex-shrink:0"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+          ${o.tel}</div>` : ''}
+      </div>`;
+    });
+
+    html += `</div>`;
+  });
+
+  el.innerHTML = html;
 }
 function renderAdmClients(){
   const grid=document.getElementById('a-clients-grid');
