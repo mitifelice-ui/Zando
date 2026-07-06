@@ -599,11 +599,13 @@ tr:hover td{background:#fafbfc}
       <div class="fg"><label>Email</label><input id="l-email" type="email" placeholder="votre@email.com"></div>
       <div class="fg"><label>Mot de passe</label><input id="l-pass" type="password" placeholder="••••••••"></div>
       <button class="btn btn-g" style="width:100%;justify-content:center;margin-top:4px" onclick="doLogin()">Se connecter</button>
-      <div class="div">ou</div>
-      <button class="btn btn-dk" style="width:100%;justify-content:center" onclick="doAdminLogin()">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-        Accès Administrateur
-      </button>
+      <div id="admin-section">
+        <div class="div">ou</div>
+        <button class="btn btn-dk" id="admin-login-btn" style="width:100%;justify-content:center" onclick="doAdminLogin()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          Accès Administrateur
+        </button>
+      </div>
       <div class="aswitch">Pas de compte ? <a onclick="showPage('register')">S'inscrire</a></div>
     </div>
   </div>
@@ -1327,9 +1329,29 @@ function logout(){
   currentUser=null;updateAuthUI();showPage('home');toast('Déconnecté');
 }
 function updateAuthUI(){
-  const a=document.getElementById('nav-login');const u=document.getElementById('nav-user');const l=document.getElementById('nav-logout');
-  if(currentUser){a.classList.add('hide');u.classList.remove('hide');l.classList.remove('hide');u.innerHTML=`<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${currentUser.prenom}`;}
-  else{a.classList.remove('hide');u.classList.add('hide');l.classList.add('hide');}
+  const a=document.getElementById('nav-login');
+  const u=document.getElementById('nav-user');
+  const l=document.getElementById('nav-logout');
+  const adminBtn=document.getElementById('admin-login-btn');
+  if(currentUser){
+    a.classList.add('hide');
+    u.classList.remove('hide');
+    l.classList.remove('hide');
+    // Show full name: prenom + nom
+    const fullName=((currentUser.prenom||'')+(currentUser.nom?' '+currentUser.nom:'')).trim() || currentUser.email.split('@')[0];
+    u.innerHTML=`<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${fullName}`;
+    // Hide admin button when a regular user is logged in
+    // Hide whole admin section for non-admin users
+    const admSec=document.getElementById('admin-section');
+    if(admSec) admSec.style.display=(currentUser.email===ADMIN_EMAIL)?'':'none';
+  } else {
+    a.classList.remove('hide');
+    u.classList.add('hide');
+    l.classList.add('hide');
+    // Show admin section again on logout
+    const admSecOut=document.getElementById('admin-section');
+    if(admSecOut) admSecOut.style.display='';
+  }
 }
 
 // ═══════════════════════════════════════
