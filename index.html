@@ -51,18 +51,23 @@
   onSnapshot(query(ordersRef, orderBy('createdAt', 'desc')), snap => {
     orders = snap.docs.map(d => ({id: d.id, ...d.data()}));
     updateAdmBadge && updateAdmBadge();
-    // Refresh admin views if open
-    if(document.getElementById('admin') && document.getElementById('admin').style.display !== 'none'){
+    // Always refresh admin if panel is open
+    const adm = document.getElementById('admin');
+    if(adm && adm.style.display !== 'none'){
       renderAdmDash && renderAdmDash();
       renderAdmOrders && renderAdmOrders();
     }
-    document.getElementById('cart-count') && updateCartCount && updateCartCount();
+    updateCartCount && updateCartCount();
   });
 
-  // Listen to users collection
+  // Listen to users collection — sync to local array + refresh admin
   onSnapshot(collection(db, 'users'), snap => {
     users = snap.docs.map(d => ({id: d.id, ...d.data()}));
-    if(document.getElementById('a-clients-tb')) renderAdmClients && renderAdmClients();
+    // Refresh clients panel whenever data arrives (grid or table)
+    renderAdmClients && renderAdmClients();
+    // Update dashboard count
+    const kc = document.getElementById('k-clients');
+    if(kc) kc.textContent = users.length;
   });
 
   // Listen to food orders
@@ -1523,6 +1528,16 @@ function openAdmin(){
   document.getElementById('food-site').style.display='none';
   document.getElementById('admin').style.display='block';
   renderAdmDash();renderAdmProds();renderAdmOrders();renderAdmClients();renderAdmStores();renderAdmFood();updateAdmBadge();
+  // Force refresh from Firestore if connected
+  if(window._fbReady && window._fb){
+    const {db,collection,getDocs} = window._fb;
+    getDocs(collection(db,'users')).then(snap=>{
+      if(snap.docs.length>0){users=snap.docs.map(d=>({id:d.id,...d.data()}));renderAdmClients();}
+    }).catch(e=>console.log('Firestore users:', e));
+    getDocs(collection(db,'orders')).then(snap=>{
+      if(snap.docs.length>0){orders=snap.docs.map(d=>({id:d.id,...d.data()}));renderAdmDash();renderAdmOrders();updateAdmBadge();}
+    }).catch(e=>console.log('Firestore orders:', e));
+  }
   toast('Admin ouvert');
 }
 function exitAdmin(){document.getElementById('admin').style.display='none';switchSite('shop');}
